@@ -7,6 +7,7 @@ import warnings
 from enum import Enum
 
 import torch
+import torchvision
 import torch.nn as nn
 import torch.nn.parallel
 import torch.backends.cudnn as cudnn
@@ -17,16 +18,20 @@ import torch.multiprocessing as mp
 import torch.utils.data
 import torch.utils.data.distributed
 import torchvision.transforms as transforms
+from torch.utils.tensorboard import SummaryWriter
 import torchvision.datasets as datasets
 import torchvision.models as models
+
+# important for tensorboard
+writer = SummaryWriter()
 
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
     and callable(models.__dict__[name]))
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
-parser.add_argument('data', metavar='DIR', default='imagenet',
-                    help='path to dataset (default: imagenet)')
+parser.add_argument('data', metavar='DIR', default='tiny-imagenet-200/',
+                    help='path to dataset')
 parser.add_argument('-a', '--arch', metavar='ARCH', default='resnet18',
                     choices=model_names,
                     help='model architecture: ' +
@@ -137,7 +142,8 @@ def main_worker(gpu, ngpus_per_node, args):
     else:
         print("=> creating model '{}'".format(args.arch))
         model = models.__dict__[args.arch]()
-
+    # change fc output from 1000 to 200
+    model.fc = torch.nn.Linear(model.fc.in_features, 200)
     if not torch.cuda.is_available():
         print('using CPU, this will be slow')
     elif args.distributed:
@@ -213,7 +219,7 @@ def main_worker(gpu, ngpus_per_node, args):
     train_dataset = datasets.ImageFolder(
         traindir,
         transforms.Compose([
-            transforms.RandomResizedCrop(224),
+            # transforms.RandomResizedCrop(224),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             normalize,
@@ -230,14 +236,22 @@ def main_worker(gpu, ngpus_per_node, args):
 
     val_loader = torch.utils.data.DataLoader(
         datasets.ImageFolder(valdir, transforms.Compose([
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
+            # transforms.Resize(256),
+            # transforms.CenterCrop(224),
             transforms.ToTensor(),
             normalize,
         ])),
         batch_size=args.batch_size, shuffle=False,
         num_workers=args.workers, pin_memory=True)
 
+    images, labels = next(iter(train_loader))
+
+
+    grid = torchvision.utils.make_grid(images)
+    writer.add_image('images', grid, 0)
+    # plot model structure
+    writer.add_graph(model, images)
+    writer.close()
     if args.evaluate:
         validate(val_loader, model, criterion, args)
         return
