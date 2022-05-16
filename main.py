@@ -219,6 +219,7 @@ def main_worker(gpu, ngpus_per_node, args):
     train_dataset = datasets.ImageFolder(
         traindir,
         transforms.Compose([
+            # delete the croping step
             # transforms.RandomResizedCrop(224),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
@@ -251,7 +252,6 @@ def main_worker(gpu, ngpus_per_node, args):
     writer.add_image('images', grid, 0)
     # plot model structure
     writer.add_graph(model, images)
-    writer.close()
     if args.evaluate:
         validate(val_loader, model, criterion, args)
         return
@@ -264,7 +264,7 @@ def main_worker(gpu, ngpus_per_node, args):
         train(train_loader, model, criterion, optimizer, epoch, args)
 
         # evaluate on validation set
-        acc1 = validate(val_loader, model, criterion, args)
+        acc1 = validate(val_loader, model, criterion, args, epoch)
         
         scheduler.step()
 
@@ -273,6 +273,7 @@ def main_worker(gpu, ngpus_per_node, args):
         is_best = acc1 > best_acc1
         best_acc1 = max(acc1, best_acc1)
 
+        # plot loss curve
         if not args.multiprocessing_distributed or (args.multiprocessing_distributed
                 and args.rank % ngpus_per_node == 0):
             save_checkpoint({
@@ -283,6 +284,8 @@ def main_worker(gpu, ngpus_per_node, args):
                 'optimizer' : optimizer.state_dict(),
                 'scheduler' : scheduler.state_dict()
             }, is_best)
+
+        writer.close()
 
 
 def train(train_loader, model, criterion, optimizer, epoch, args):
@@ -330,9 +333,13 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
 
         if i % args.print_freq == 0:
             progress.display(i)
+            
+            # plot loss and acc curve
+            writer.add_scalar("Loss/train", loss, epoch)
+            writer.add_scalar("Top5Acc/train", acc5, epoch)
 
 
-def validate(val_loader, model, criterion, args):
+def validate(val_loader, model, criterion, args, epoch):
     batch_time = AverageMeter('Time', ':6.3f', Summary.NONE)
     losses = AverageMeter('Loss', ':.4e', Summary.NONE)
     top1 = AverageMeter('Acc@1', ':6.2f', Summary.AVERAGE)
@@ -369,6 +376,8 @@ def validate(val_loader, model, criterion, args):
 
             if i % args.print_freq == 0:
                 progress.display(i)
+                writer.add_scalar("Loss/validate", loss, epoch)
+                writer.add_scalar("Top5Acc/validate", acc5, epoch)
 
         progress.display_summary()
 

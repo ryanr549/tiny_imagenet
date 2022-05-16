@@ -3,3 +3,4 @@ runs/
 *.ipynb
 .ipynb_checkpoints
 *.swp
+*.pth.tar
