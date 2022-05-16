@@ -245,13 +245,7 @@ def main_worker(gpu, ngpus_per_node, args):
         batch_size=args.batch_size, shuffle=False,
         num_workers=args.workers, pin_memory=True)
 
-    images, labels = next(iter(train_loader))
-
-
-    grid = torchvision.utils.make_grid(images)
-    writer.add_image('images', grid, 0)
     # plot model structure
-    writer.add_graph(model, images)
     if args.evaluate:
         validate(val_loader, model, criterion, args, epoch=None)
         return
@@ -282,8 +276,10 @@ def main_worker(gpu, ngpus_per_node, args):
                 'best_acc1': best_acc1,
                 'optimizer' : optimizer.state_dict(),
                 'scheduler' : scheduler.state_dict()
-            }, is_best, filename='epoch{}.pth.tar'.format(epoch + 1))
-            # save checkpoint for every epoch
+            }, is_best)
+            if epoch % 5 ==0:
+                shutil.copy('checkpoint.pth.tar', 'epoch{}.pth.tar'.format(epoch + 1))
+            # save checkpoint for every 5 epoch
 
         writer.close()
 
