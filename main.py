@@ -253,7 +253,7 @@ def main_worker(gpu, ngpus_per_node, args):
     # plot model structure
     writer.add_graph(model, images)
     if args.evaluate:
-        validate(val_loader, model, criterion, args)
+        validate(val_loader, model, criterion, args, epoch=None)
         return
 
     for epoch in range(args.start_epoch, args.epochs):
@@ -273,7 +273,6 @@ def main_worker(gpu, ngpus_per_node, args):
         is_best = acc1 > best_acc1
         best_acc1 = max(acc1, best_acc1)
 
-        # plot loss curve
         if not args.multiprocessing_distributed or (args.multiprocessing_distributed
                 and args.rank % ngpus_per_node == 0):
             save_checkpoint({
@@ -283,7 +282,8 @@ def main_worker(gpu, ngpus_per_node, args):
                 'best_acc1': best_acc1,
                 'optimizer' : optimizer.state_dict(),
                 'scheduler' : scheduler.state_dict()
-            }, is_best)
+            }, is_best, filename='epoch{}.pth.tar'.format(epoch + 1))
+            # save checkpoint for every epoch
 
         writer.close()
 
@@ -376,8 +376,11 @@ def validate(val_loader, model, criterion, args, epoch):
 
             if i % args.print_freq == 0:
                 progress.display(i)
-                writer.add_scalar("Loss/validate", loss, epoch)
-                writer.add_scalar("Top5Acc/validate", acc5, epoch)
+                # plot loss and top5acc curve
+                # dont plot when in eval mode
+                if epoch:
+                    writer.add_scalar("Loss/validate", loss, epoch)
+                    writer.add_scalar("Top5Acc/validate", acc5, epoch)
 
         progress.display_summary()
 
