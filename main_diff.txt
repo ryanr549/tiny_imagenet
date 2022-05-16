@@ -1,0 +1,124 @@
+diff --git a/../torch_examples/imagenet/main.py b/main.py
+index 8d41291..e949461 100644
+--- a/../torch_examples/imagenet/main.py
++++ b/main.py
+@@ -7,6 +7,7 @@ import warnings
+ from enum import Enum
+ 
+ import torch
++import torchvision
+ import torch.nn as nn
+ import torch.nn.parallel
+ import torch.backends.cudnn as cudnn
+@@ -17,16 +18,20 @@ import torch.multiprocessing as mp
+ import torch.utils.data
+ import torch.utils.data.distributed
+ import torchvision.transforms as transforms
++from torch.utils.tensorboard import SummaryWriter
+ import torchvision.datasets as datasets
+ import torchvision.models as models
+ 
++# important for tensorboard
++writer = SummaryWriter()
++
+ model_names = sorted(name for name in models.__dict__
+     if name.islower() and not name.startswith("__")
+     and callable(models.__dict__[name]))
+ 
+ parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
+-parser.add_argument('data', metavar='DIR', default='imagenet',
+-                    help='path to dataset (default: imagenet)')
++parser.add_argument('data', metavar='DIR', default='tiny-imagenet-200/',
++                    help='path to dataset')
+ parser.add_argument('-a', '--arch', metavar='ARCH', default='resnet18',
+                     choices=model_names,
+                     help='model architecture: ' +
+@@ -137,7 +142,8 @@ def main_worker(gpu, ngpus_per_node, args):
+     else:
+         print("=> creating model '{}'".format(args.arch))
+         model = models.__dict__[args.arch]()
+-
++    # change fc output from 1000 to 200
++    model.fc = torch.nn.Linear(model.fc.in_features, 200)
+     if not torch.cuda.is_available():
+         print('using CPU, this will be slow')
+     elif args.distributed:
+@@ -213,7 +219,8 @@ def main_worker(gpu, ngpus_per_node, args):
+     train_dataset = datasets.ImageFolder(
+         traindir,
+         transforms.Compose([
+-            transforms.RandomResizedCrop(224),
++            # delete the croping step
++            # transforms.RandomResizedCrop(224),
+             transforms.RandomHorizontalFlip(),
+             transforms.ToTensor(),
+             normalize,
+@@ -230,16 +237,17 @@ def main_worker(gpu, ngpus_per_node, args):
+ 
+     val_loader = torch.utils.data.DataLoader(
+         datasets.ImageFolder(valdir, transforms.Compose([
+-            transforms.Resize(256),
+-            transforms.CenterCrop(224),
++            # transforms.Resize(256),
++            # transforms.CenterCrop(224),
+             transforms.ToTensor(),
+             normalize,
+         ])),
+         batch_size=args.batch_size, shuffle=False,
+         num_workers=args.workers, pin_memory=True)
+ 
++    # plot model structure
+     if args.evaluate:
+-        validate(val_loader, model, criterion, args)
++        validate(val_loader, model, criterion, args, epoch=None)
+         return
+ 
+     for epoch in range(args.start_epoch, args.epochs):
+@@ -250,7 +258,7 @@ def main_worker(gpu, ngpus_per_node, args):
+         train(train_loader, model, criterion, optimizer, epoch, args)
+ 
+         # evaluate on validation set
+-        acc1 = validate(val_loader, model, criterion, args)
++        acc1 = validate(val_loader, model, criterion, args, epoch)
+         
+         scheduler.step()
+ 
+@@ -269,6 +277,11 @@ def main_worker(gpu, ngpus_per_node, args):
+                 'optimizer' : optimizer.state_dict(),
+                 'scheduler' : scheduler.state_dict()
+             }, is_best)
++            if epoch % 5 ==0:
++                shutil.copy('checkpoint.pth.tar', 'epoch{}.pth.tar'.format(epoch + 1))
++            # save checkpoint for every 5 epoch
++
++        writer.close()
+ 
+ 
+ def train(train_loader, model, criterion, optimizer, epoch, args):
+@@ -316,9 +329,13 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
+ 
+         if i % args.print_freq == 0:
+             progress.display(i)
++            
++            # plot loss and acc curve
++            writer.add_scalar("Loss/train", loss, epoch)
++            writer.add_scalar("Top5Acc/train", acc5, epoch)
+ 
+ 
+-def validate(val_loader, model, criterion, args):
++def validate(val_loader, model, criterion, args, epoch):
+     batch_time = AverageMeter('Time', ':6.3f', Summary.NONE)
+     losses = AverageMeter('Loss', ':.4e', Summary.NONE)
+     top1 = AverageMeter('Acc@1', ':6.2f', Summary.AVERAGE)
+@@ -355,6 +372,11 @@ def validate(val_loader, model, criterion, args):
+ 
+             if i % args.print_freq == 0:
+                 progress.display(i)
++                # plot loss and top5acc curve
++                # dont plot when in eval mode
++                if epoch:
++                    writer.add_scalar("Loss/validate", loss, epoch)
++                    writer.add_scalar("Top5Acc/validate", acc5, epoch)
+ 
+         progress.display_summary()
+ 
